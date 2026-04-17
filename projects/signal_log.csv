@@ -1,0 +1,13 @@
+timestamp,direction,confidence,quality,consensus,whale_bias,whale_dir,funding_conf,liq_conf,vol_conf,consensus_conf,divergence_conf,momentum_conf,conf_count,composite_score,price,reason
+2026-03-27 11:02:07,NEUTRAL,17.25,NO OPERAR,0/1,50.00,NEUTRAL,NO,NO,NO,NO,NO DATA,NO DATA,0/4,30.00,66185.00,0/1 cohortes NEUTRAL
+2026-03-27 11:02:18,BEAR,82.12,ALTA,4/6,39.30,SHORT,OK,OK,OK,OK,NO DATA,NO DATA,4/4,70.64,66191.00,"4/6 cohortes SHORT | Fuertes: Money Printer, Smart Money | Funding confirma | Long Kill cerca (-3.0%)"
+2026-03-27 11:25:50,NEUTRAL,17.25,NO OPERAR,0/1,50.00,NEUTRAL,NO,NO,NO,NO,NO DATA,NO DATA,0/4,30.00,66103.00,0/1 cohortes NEUTRAL
+2026-03-27 11:26:01,BEAR,81.20,ALTA,4/6,39.87,SHORT,OK,OK,OK,OK,NO DATA,NO DATA,4/4,68.00,66156.00,"4/6 cohortes SHORT | Fuertes: Money Printer, Smart Money | Funding confirma | Long Kill cerca (-7.8%)"
+2026-03-27 11:37:19,NEUTRAL,17.25,NO OPERAR,0/1,50.00,NEUTRAL,NO,NO,NO,NO,NO DATA,NO DATA,0/4,30.00,66618.00,0/1 cohortes NEUTRAL
+2026-03-27 11:37:30,BEAR,81.07,ALTA,4/6,39.87,SHORT,OK,OK,OK,OK,NO DATA,NO DATA,4/4,67.62,66587.00,"4/6 cohortes SHORT | Fuertes: Money Printer, Smart Money | Funding confirma | Long Kill cerca (-8.5%)"
+2026-03-27 11:45:46,NEUTRAL,17.25,NO OPERAR,0/1,50.00,NEUTRAL,NO,NO,NO,NO,NO DATA,NO DATA,0/4,30.00,66429.00,0/1 cohortes NEUTRAL
+2026-03-27 11:45:57,BEAR,81.55,ALTA,4/6,38.96,SHORT,OK,OK,OK,OK,NO DATA,NO DATA,4/4,69.01,66413.00,"4/6 cohortes SHORT | Fuertes: Money Printer, Smart Money | Funding confirma | Long Kill cerca (-6.7%)"
+2026-03-27 12:02:24,NEUTRAL,17.25,NO OPERAR,0/1,50.00,NEUTRAL,NO,NO,NO,NO,NO DATA,NO DATA,0/4,30.00,66014.00,0/1 cohortes NEUTRAL
+2026-03-27 12:02:35,BEAR,81.17,ALTA,4/6,39.32,SHORT,OK,OK,OK,OK,NO DATA,NO DATA,4/4,67.93,66067.00,"4/6 cohortes SHORT | Fuertes: Money Printer, Smart Money | Funding confirma | Long Kill cerca (-6.0%)"
+2026-03-27 12:09:40,NEUTRAL,17.25,NO OPERAR,0/1,50.00,NEUTRAL,NO,NO,NO,NO,NO DATA,NO DATA,0/4,30.00,65810.00,0/1 cohortes NEUTRAL
+2026-03-27 12:09:51,BEAR,81.61,ALTA,4/6,39.26,SHORT,OK,OK,OK,OK,NO DATA,NO DATA,4/4,69.16,65820.00,"4/6 cohortes SHORT | Fuertes: Money Printer, Smart Money | Funding confirma | Long Kill cerca (-6.0%)"

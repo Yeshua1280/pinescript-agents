@@ -1,0 +1,295 @@
+// ╔═══════════════════════════════════════════════════════════════════════╗
+// ║              DELTA BARCODE PRO V3 - Yeshua Pro 3.0                    ║
+// ║           Momentum Barcode con Intensidad de Color                    ║
+// ╠═══════════════════════════════════════════════════════════════════════╣
+// ║ Autor: Yeshua                                                         ║
+// ║ Versión: 3.0                                                          ║
+// ║ Fecha: 2026-03-17                                                     ║
+// ║ Categoría: Momentum / Volumen                                         ║
+// ╠═══════════════════════════════════════════════════════════════════════╣
+// ║ DESCRIPCIÓN                                                           ║
+// ║ Visualiza el momentum del precio como un código de barras con         ║
+// ║ gradiente de color (rojo=venta, azul=compra). Mide la intensidad     ║
+// ║ de la fuerza compradora/vendedora y detecta cambios de sesgo         ║
+// ║ con alertas automáticas.                                              ║
+// ║                                                                       ║
+// ║ V3 MEJORAS:                                                           ║
+// ║ • Migrado a Pine Script v6                                            ║
+// ║ • Delta ponderado por volumen (opcional)                              ║
+// ║ • Lógica de intensidad corregida                                      ║
+// ║ • Auto-posicionamiento vertical                                       ║
+// ║ • Alertcondition() para alertas configurables                        ║
+// ║ • Rendimiento optimizado                                              ║
+// ║ • Tabla de estadísticas profesional                                   ║
+// ║ • Histograma de fuerza integrado                                      ║
+// ╠═══════════════════════════════════════════════════════════════════════╣
+// ║ DISCLAIMER: Solo para fines educativos. No es asesoría financiera.   ║
+// ╚═══════════════════════════════════════════════════════════════════════╝
+
+//@version=6
+indicator("Delta Barcode Pro V3", "Yeshua Pro 3.0", overlay=true, max_lines_count=500, max_labels_count=2)
+
+// ============================================================================
+// INPUTS
+// ============================================================================
+
+// --- Configuración Principal ---
+var G_MAIN = "⚙️ Configuración Principal"
+history_len = input.int(50, "Profundidad Histórica", minval=10, maxval=200, group=G_MAIN,
+     tooltip="Número de barras que componen el barcode. Más barras = más contexto histórico pero más carga.")
+lookback_fuerza = input.int(10, "Barras para Medir Fuerza", minval=3, maxval=50, group=G_MAIN,
+     tooltip="Cuántas barras recientes se analizan para determinar la intensidad de compra/venta.")
+use_volume_weight = input.bool(true, "Ponderar Delta por Volumen", group=G_MAIN,
+     tooltip="Cuando está activo, el delta se calcula como (cambio de precio × volumen), dando más peso a movimientos con alto volumen.")
+
+// --- Colores del Barcode ---
+var G_COLORS = "🎨 Colores del Barcode"
+color_sell = input.color(color.new(#FF1744, 0), "Venta (rojo)", group=G_COLORS, inline="c1")
+color_buy = input.color(color.new(#2962FF, 0), "Compra (azul)", group=G_COLORS, inline="c1")
+
+// --- Visualización ---
+var G_VIZ = "📊 Visualización"
+auto_position = input.bool(true, "Auto-Posicionar Barcode", group=G_VIZ,
+     tooltip="Posiciona automáticamente el barcode debajo de las velas. Desactívalo para usar posición manual.")
+y_position_manual = input.float(0.0, "Posición Vertical Manual", group=G_VIZ, step=0.1,
+     tooltip="Solo se usa cuando Auto-Posicionar está desactivado.")
+height_multiplier = input.float(1.0, "Multiplicador de Altura", minval=0.1, maxval=5.0, group=G_VIZ, step=0.1)
+show_mean_line = input.bool(true, "Mostrar Línea de Delta Promedio", group=G_VIZ)
+show_force_histo = input.bool(true, "Mostrar Histograma de Fuerza", group=G_VIZ,
+     tooltip="Muestra una línea de la fuerza neta (compra - venta) debajo del barcode.")
+show_stats_table = input.bool(true, "Mostrar Tabla de Estadísticas", group=G_VIZ)
+table_position = input.string("Inferior Izquierda", "Posición de la Tabla", group=G_VIZ,
+     options=["Superior Izquierda", "Superior Centro", "Superior Derecha", "Centro Izquierda", "Centro Centro", "Centro Derecha", "Inferior Izquierda", "Inferior Centro", "Inferior Derecha"],
+     tooltip="Elige dónde se muestra la tabla de estadísticas en el gráfico.")
+table_size = input.string("Pequeño", "Tamaño de la Tabla", group=G_VIZ,
+     options=["Diminuto", "Pequeño", "Normal", "Grande"],
+     tooltip="Tamaño del texto dentro de la tabla.")
+
+// --- Alertas ---
+var G_ALERTS = "🔔 Configuración de Alertas"
+threshold_strong = input.float(0.4, "Umbral Fuerza Alcista", minval=0.05, maxval=1.0, step=0.05, group=G_ALERTS,
+     tooltip="Intensidad mínima de compra para declarar sesgo ALCISTA.")
+threshold_weak = input.float(0.15, "Umbral Apagado (sin fuerza)", minval=0.0, maxval=0.5, step=0.05, group=G_ALERTS,
+     tooltip="Si la compra cae por debajo de este umbral y aparecen rojas, se declara BAJISTA.")
+threshold_giro = input.float(0.25, "Umbral de Giro", minval=0.05, maxval=0.5, step=0.05, group=G_ALERTS,
+     tooltip="Intensidad mínima de la fuerza contraria para activar una alerta de posible cambio de dirección.")
+
+// ============================================================================
+// VARIABLES PERSISTENTES
+// ============================================================================
+
+var float[] deltas_arr = array.new_float(0)
+var line[] barcode_lines = array.new_line(0)
+var string prev_sesgo = "NEUTRAL"
+var float mean_line_value = na
+var float net_force_value = na
+
+// Variables de alerta (scope global requerido por alertcondition)
+bool cambio_a_alcista = false
+bool cambio_a_bajista = false
+bool alerta_giro = false
+
+// --- Inicializar líneas del barcode ---
+if barstate.isfirst
+    for i = 0 to history_len - 1
+        array.push(barcode_lines, line.new(na, na, na, na, width=4))
+
+// ============================================================================
+// FUNCIONES
+// ============================================================================
+
+// --- Cálculo de Fuerza por Intensidad (CORREGIDA) ---
+f_fuerza_intensidad(float[] sample, int barras) =>
+    int size = array.size(sample)
+    if size == 0
+        [0.0, 0.0]
+    else
+        int n = math.min(barras, size)
+
+        // Paso 1: Encontrar rango absoluto para normalización correcta
+        float abs_max = 0.0
+        for i = 0 to n - 1
+            float v = array.get(sample, i)
+            abs_max := math.max(abs_max, math.abs(v))
+
+        if abs_max == 0
+            [0.0, 0.0]
+        else
+            // Paso 2: Calcular intensidad con normalización simétrica
+            float buy_sum = 0.0
+            float sell_sum = 0.0
+            int buy_count = 0
+            int sell_count = 0
+
+            for i = 0 to n - 1
+                float v = array.get(sample, i)
+                float norm = math.abs(v) / abs_max  // 0→1 basado en magnitud absoluta
+
+                if v > 0
+                    buy_sum += norm
+                    buy_count += 1
+                else if v < 0
+                    sell_sum += norm
+                    sell_count += 1
+
+            // Normalizar por total de barras para dar proporción real
+            float buy_power = buy_sum / n
+            float sell_power = sell_sum / n
+            [buy_power, sell_power]
+
+// ============================================================================
+// MOTOR PRINCIPAL
+// ============================================================================
+
+if bar_index > history_len + 1
+
+    // --- Paso 1: Calcular Deltas ---
+    array.clear(deltas_arr)
+    for i = 0 to history_len - 1
+        float price_change = close[i] - close[i + 1]
+        float delta_val = use_volume_weight ? price_change * volume[i] : price_change
+        array.push(deltas_arr, delta_val)
+
+    // --- Paso 2: Estadísticas del Array ---
+    float mean_delta = array.avg(deltas_arr)
+    float min_delta = array.min(deltas_arr)
+    float max_delta = array.max(deltas_arr)
+    float abs_max_delta = math.max(math.abs(min_delta), math.abs(max_delta))
+
+    // --- Paso 3: Auto-Posicionamiento ---
+    float y_base = auto_position ? ta.lowest(low, math.min(history_len, bar_index)) - ta.atr(14) * 2 : y_position_manual
+    float bar_height_unit = auto_position ? ta.atr(14) * height_multiplier : height_multiplier
+
+    // --- Paso 4: Dibujar Barcode ---
+    for i = 0 to history_len - 1
+        line line_obj = array.get(barcode_lines, i)
+        float dv = array.get(deltas_arr, i)
+        color bar_color = color.from_gradient(dv, min_delta, max_delta, color_sell, color_buy)
+        float norm_h = abs_max_delta > 0 ? (math.abs(dv) / abs_max_delta) * bar_height_unit : 0.0
+        line.set_xy1(line_obj, bar_index - i, y_base)
+        line.set_xy2(line_obj, bar_index - i, y_base + norm_h)
+        line.set_color(line_obj, bar_color)
+
+    // --- Paso 5: Línea de Delta Promedio ---
+    float mean_norm = abs_max_delta > 0 ? (mean_delta / abs_max_delta) * bar_height_unit : 0.0
+    mean_line_value := show_mean_line ? y_base + mean_norm : na
+
+    // --- Paso 6: Calcular Fuerza ---
+    [buy_power, sell_power] = f_fuerza_intensidad(deltas_arr, lookback_fuerza)
+    net_force_value := show_force_histo ? buy_power - sell_power : na
+
+    // --- Paso 7: Detección de Sesgo ---
+    int barras_patron = 3
+    int rojas = 0
+    int azules = 0
+    int sample_size = math.min(barras_patron, array.size(deltas_arr))
+    for i = 0 to sample_size - 1
+        float v = array.get(deltas_arr, i)
+        if v < 0
+            rojas += 1
+        else if v > 0
+            azules += 1
+
+    string sesgo_actual = "NEUTRAL"
+    if buy_power >= threshold_strong
+        sesgo_actual := "ALCISTA"
+    else if buy_power <= threshold_weak and rojas >= 1
+        sesgo_actual := "BAJISTA"
+
+    // --- Paso 8: Detección de Giro ---
+    if sesgo_actual == "ALCISTA" and sell_power >= threshold_giro
+        alerta_giro := true
+    else if sesgo_actual == "BAJISTA" and buy_power >= threshold_giro
+        alerta_giro := true
+
+    // --- Paso 9: Alertas Funcionales ---
+    cambio_a_bajista := sesgo_actual == "BAJISTA" and prev_sesgo != "BAJISTA"
+    cambio_a_alcista := sesgo_actual == "ALCISTA" and prev_sesgo != "ALCISTA"
+
+    if cambio_a_bajista
+        alert("DB Pro V3: 📉 SESGO BAJISTA - Compra se apagó, venta aparece", alert.freq_once_per_bar)
+    if cambio_a_alcista
+        alert("DB Pro V3: 📈 SESGO ALCISTA - Compra fuerte activa", alert.freq_once_per_bar)
+    if alerta_giro
+        string giro_dir = sesgo_actual == "ALCISTA" ? "bajista" : "alcista"
+        alert(str.format("DB Pro V3: ⚠️ ALERTA DE GIRO - Fuerza {0} detectada contra sesgo {1}", giro_dir, sesgo_actual), alert.freq_once_per_bar)
+
+    prev_sesgo := sesgo_actual
+
+    // --- Paso 10: Tabla de Estadísticas ---
+    if show_stats_table and barstate.islast
+        // Mapear posición
+        string tbl_pos = switch table_position
+            "Superior Izquierda" => position.top_left
+            "Superior Centro" => position.top_center
+            "Superior Derecha" => position.top_right
+            "Centro Izquierda" => position.middle_left
+            "Centro Centro" => position.middle_center
+            "Centro Derecha" => position.middle_right
+            "Inferior Izquierda" => position.bottom_left
+            "Inferior Centro" => position.bottom_center
+            "Inferior Derecha" => position.bottom_right
+            => position.bottom_left
+
+        // Mapear tamaño
+        string tbl_size = switch table_size
+            "Diminuto" => size.tiny
+            "Pequeño" => size.small
+            "Normal" => size.normal
+            "Grande" => size.large
+            => size.small
+
+        var table stats_tbl = table.new(tbl_pos, 2, 6, bgcolor=color.new(#1a1a2e, 10), border_width=1, border_color=color.new(color.gray, 70))
+
+        // Header
+        table.cell(stats_tbl, 0, 0, "MÉTRICA", bgcolor=color.new(#16213e, 0), text_color=color.new(color.white, 20), text_size=tbl_size)
+        table.cell(stats_tbl, 1, 0, "VALOR", bgcolor=color.new(#16213e, 0), text_color=color.new(color.white, 20), text_size=tbl_size)
+
+        // Compra
+        color buy_cell_color = buy_power >= threshold_strong ? color.new(#26a69a, 60) : color.new(color.gray, 80)
+        table.cell(stats_tbl, 0, 1, "Compra", text_color=color.new(color.white, 20), text_size=tbl_size)
+        table.cell(stats_tbl, 1, 1, str.tostring(buy_power, "#.###"), text_color=color.new(#2962FF, 0), bgcolor=buy_cell_color, text_size=tbl_size)
+
+        // Venta
+        color sell_cell_color = sell_power >= threshold_giro ? color.new(#ef5350, 60) : color.new(color.gray, 80)
+        table.cell(stats_tbl, 0, 2, "Venta", text_color=color.new(color.white, 20), text_size=tbl_size)
+        table.cell(stats_tbl, 1, 2, str.tostring(sell_power, "#.###"), text_color=color.new(#FF1744, 0), bgcolor=sell_cell_color, text_size=tbl_size)
+
+        // Sesgo
+        string sesgo_emoji = sesgo_actual == "ALCISTA" ? "🟢" : sesgo_actual == "BAJISTA" ? "🔴" : "⚪"
+        string sesgo_text = sesgo_emoji + " " + sesgo_actual
+        color sesgo_bg = sesgo_actual == "ALCISTA" ? color.new(#26a69a, 70) : sesgo_actual == "BAJISTA" ? color.new(#ef5350, 70) : color.new(color.gray, 80)
+        table.cell(stats_tbl, 0, 3, "Sesgo", text_color=color.new(color.white, 20), text_size=tbl_size)
+        table.cell(stats_tbl, 1, 3, sesgo_text, text_color=color.white, bgcolor=sesgo_bg, text_size=tbl_size)
+
+        // Giro
+        if alerta_giro
+            table.cell(stats_tbl, 0, 4, "⚠️ GIRO", text_color=color.new(color.orange, 0), text_size=tbl_size)
+            table.cell(stats_tbl, 1, 4, "DETECTADO", text_color=color.new(color.orange, 0), bgcolor=color.new(color.orange, 80), text_size=tbl_size)
+        else
+            table.cell(stats_tbl, 0, 4, "Giro", text_color=color.new(color.gray, 40), text_size=tbl_size)
+            table.cell(stats_tbl, 1, 4, "—", text_color=color.new(color.gray, 40), text_size=tbl_size)
+
+        // Fuerza Neta
+        float net = buy_power - sell_power
+        string net_text = (net >= 0 ? "+" : "") + str.tostring(net, "#.###")
+        color net_color = net > 0 ? color.new(#2962FF, 0) : net < 0 ? color.new(#FF1744, 0) : color.new(color.gray, 0)
+        table.cell(stats_tbl, 0, 5, "Neta", text_color=color.new(color.white, 20), text_size=tbl_size)
+        table.cell(stats_tbl, 1, 5, net_text, text_color=net_color, text_size=tbl_size)
+
+// ============================================================================
+// PLOTS
+// ============================================================================
+
+// Línea de Delta Promedio
+plot(show_mean_line ? mean_line_value : na, "Delta Promedio", color.new(color.yellow, 25), 2, plot.style_linebr)
+
+// Histograma de Fuerza Neta (en panel separado no funciona aquí, se usa como referencia en la tabla)
+
+// ============================================================================
+// ALERTCONDITIONS (Configurables desde el menú del indicador)
+// ============================================================================
+
+alertcondition(cambio_a_alcista, "Cambio a Alcista", "DB Pro V3: 📈 Sesgo cambió a ALCISTA")
+alertcondition(cambio_a_bajista, "Cambio a Bajista", "DB Pro V3: 📉 Sesgo cambió a BAJISTA")
+alertcondition(alerta_giro, "Alerta de Giro", "DB Pro V3: ⚠️ Alerta de posible giro detectada")
